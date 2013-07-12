@@ -19,7 +19,6 @@ import static org.junit.Assert.*;
 
 import java.io.Serializable;
 
-import org.junit.Ignore;
 import org.junit.Test;
 import org.springframework.data.jpa.domain.AbstractPersistable;
 import org.springframework.test.context.ContextConfiguration;
@@ -41,13 +40,6 @@ public class EclipseLinkJpaMetamodelEntityInformationIntegrationTests extends
 		JpaEntityInformation<?, ?> information = JpaEntityInformationSupport.getMetadata(AbstractPersistable.class, em);
 		assertEquals(String.class, information.getIdType());
 	}
-
-	/**
-	 * Ignored due to https://bugs.eclipse.org/bugs/show_bug.cgi?id=411231.
-	 */
-	@Override
-	@Ignore
-	public void findsIdClassOnMappedSuperclass() {}
 
 	@Override
 	protected String getMetadadataPersitenceUnitName() {
