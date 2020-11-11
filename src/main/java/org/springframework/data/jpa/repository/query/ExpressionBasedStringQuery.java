@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,7 +15,8 @@
  */
 package org.springframework.data.jpa.repository.query;
 
-import org.springframework.data.jpa.repository.support.JpaEntityMetadata;
+import java.util.regex.Pattern;
+
 import org.springframework.data.repository.core.EntityMetadata;
 import org.springframework.expression.Expression;
 import org.springframework.expression.ParserContext;
@@ -30,46 +31,60 @@ import org.springframework.util.Assert;
  * <ol>
  * <li>{@code #entityName} - the simple class name of the given entity</li>
  * <ol>
- * 
+ *
  * @author Thomas Darimont
  * @author Oliver Gierke
+ * @author Tom Hombergs
  */
 class ExpressionBasedStringQuery extends StringQuery {
 
-	private static final String ENTITY_NAME = "entityName";
-	private final JpaEntityMetadata<?> metadata;
+	private static final String EXPRESSION_PARAMETER = "?#{";
+	private static final String QUOTED_EXPRESSION_PARAMETER = "?__HASH__{";
 
-	private String parsedQuery;
+	private static final Pattern EXPRESSION_PARAMETER_QUOTING = Pattern.compile(Pattern.quote(EXPRESSION_PARAMETER));
+	private static final Pattern EXPRESSION_PARAMETER_UNQUOTING = Pattern.compile(Pattern
+			.quote(QUOTED_EXPRESSION_PARAMETER));
+
+	private static final String ENTITY_NAME = "entityName";
+	private static final String ENTITY_NAME_VARIABLE = "#" + ENTITY_NAME;
+	private static final String ENTITY_NAME_VARIABLE_EXPRESSION = "#{" + ENTITY_NAME_VARIABLE + "}";
 
 	/**
 	 * Creates a new {@link ExpressionBasedStringQuery} for the given query and {@link EntityMetadata}.
-	 * 
+	 *
 	 * @param query must not be {@literal null} or empty.
 	 * @param metadata must not be {@literal null}.
+	 * @param parser must not be {@literal null}.
 	 */
-	public ExpressionBasedStringQuery(String query, JpaEntityMetadata<?> metadata) {
-
-		super(query);
-		Assert.notNull(metadata, "JpaEntityMetadata must not be null!");
-		this.metadata = metadata;
+	public ExpressionBasedStringQuery(String query, JpaEntityMetadata<?> metadata, SpelExpressionParser parser) {
+		super(renderQueryIfExpressionOrReturnQuery(query, metadata, parser));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.jpa.repository.query.StringQuery#getQueryString()
+	/**
+	 * Creates an {@link ExpressionBasedStringQuery} from a given {@link DeclaredQuery}.
+	 * 
+	 * @param query the original query. Must not be {@literal null}.
+	 * @param metadata the {@link JpaEntityMetadata} for the given entity. Must not be {@literal null}.
+	 * @param parser Parser for resolving SpEL expressions. Must not be {@literal null}.
+	 * @return A query supporting SpEL expressions.
 	 */
-	@Override
-	public String getQueryString() {
-
-		if (parsedQuery == null) {
-			String rawQuery = super.getQueryString();
-			this.parsedQuery = renderQueryIfExpressionOrReturnQuery(rawQuery);
-		}
-
-		return this.parsedQuery;
+	static ExpressionBasedStringQuery from(DeclaredQuery query, JpaEntityMetadata metadata,
+			SpelExpressionParser parser) {
+		return new ExpressionBasedStringQuery(query.getQueryString(), metadata, parser);
 	}
 
-	private String renderQueryIfExpressionOrReturnQuery(String query) {
+	/**
+	 * @param query, the query expression potentially containing a SpEL expression. Must not be {@literal null}.}
+	 * @param metadata the {@link JpaEntityMetadata} for the given entity. Must not be {@literal null}.
+	 * @param parser Must not be {@literal null}.
+	 * @return
+	 */
+	private static String renderQueryIfExpressionOrReturnQuery(String query, JpaEntityMetadata<?> metadata,
+			SpelExpressionParser parser) {
+
+		Assert.notNull(query, "query must not be null!");
+		Assert.notNull(metadata, "metadata must not be null!");
+		Assert.notNull(parser, "parser must not be null!");
 
 		if (!containsExpression(query)) {
 			return query;
@@ -78,14 +93,28 @@ class ExpressionBasedStringQuery extends StringQuery {
 		StandardEvaluationContext evalContext = new StandardEvaluationContext();
 		evalContext.setVariable(ENTITY_NAME, metadata.getEntityName());
 
-		SpelExpressionParser parser = new SpelExpressionParser();
+		query = potentiallyQuoteExpressionsParameter(query);
+
 		Expression expr = parser.parseExpression(query, ParserContext.TEMPLATE_EXPRESSION);
 
-		Object result = expr.getValue(evalContext, String.class);
-		return result == null ? query : String.valueOf(result);
+		String result = expr.getValue(evalContext, String.class);
+
+		if (result == null) {
+			return query;
+		}
+
+		return potentiallyUnquoteParameterExpressions(result);
+	}
+
+	private static String potentiallyUnquoteParameterExpressions(String result) {
+		return EXPRESSION_PARAMETER_UNQUOTING.matcher(result).replaceAll(EXPRESSION_PARAMETER);
+	}
+
+	private static String potentiallyQuoteExpressionsParameter(String query) {
+		return EXPRESSION_PARAMETER_QUOTING.matcher(query).replaceAll(QUOTED_EXPRESSION_PARAMETER);
 	}
 
 	private static boolean containsExpression(String query) {
-		return query.contains("#{#" + ENTITY_NAME + "}");
+		return query.contains(ENTITY_NAME_VARIABLE_EXPRESSION);
 	}
 }

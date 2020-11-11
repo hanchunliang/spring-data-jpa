@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,46 +15,49 @@
  */
 package org.springframework.data.jpa.repository.config;
 
-import static org.hamcrest.CoreMatchers.*;
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import java.util.Arrays;
+import java.util.Collections;
 
-import org.hamcrest.Matchers;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.runner.RunWith;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.metamodel.Metamodel;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.support.BeanDefinitionReaderUtils;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.AnnotationConfigUtils;
+import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.data.repository.config.RepositoryConfigurationExtension;
 import org.springframework.data.repository.config.RepositoryConfigurationSource;
+import org.springframework.instrument.classloading.ShadowingClassLoader;
 import org.springframework.orm.jpa.support.PersistenceAnnotationBeanPostProcessor;
 
 /**
  * Unit tests for {@link JpaRepositoryConfigExtension}.
- * 
+ *
  * @author Oliver Gierke
+ * @author Mark Paluch
+ * @author Jens Schauder
  */
-@RunWith(MockitoJUnitRunner.class)
-public class JpaRepositoryConfigExtensionUnitTests {
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+class JpaRepositoryConfigExtensionUnitTests {
 
-	private static final String RIABPP_CLASS_NAME = "org.springframework.data.repository.core.support.RepositoryInterfaceAwareBeanPostProcessor";
-	private static final String PABPP_CLASS_NAME = "org.springframework.orm.jpa.support.PersistenceAnnotationBeanPostProcessor";
-
-	@Mock
-	RepositoryConfigurationSource configSource;
-
-	@Rule
-	public ExpectedException exception = ExpectedException.none();
+	@Mock RepositoryConfigurationSource configSource;
 
 	@Test
-	public void registersDefaultBeanPostProcessorsByDefault() {
+	void registersDefaultBeanPostProcessorsByDefault() {
 
 		DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
 
@@ -63,12 +66,11 @@ public class JpaRepositoryConfigExtensionUnitTests {
 
 		Iterable<String> names = Arrays.asList(factory.getBeanDefinitionNames());
 
-		assertThat(names, Matchers.<String> hasItem(startsWith(PABPP_CLASS_NAME)));
-		assertThat(names, Matchers.<String> hasItem(startsWith(RIABPP_CLASS_NAME)));
+		assertThat(names).contains(AnnotationConfigUtils.PERSISTENCE_ANNOTATION_PROCESSOR_BEAN_NAME);
 	}
 
 	@Test
-	public void doesNotRegisterProcessorIfAlreadyPresent() {
+	void doesNotRegisterProcessorIfAlreadyPresent() {
 
 		DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
 		RootBeanDefinition pabppDefinition = new RootBeanDefinition(PersistenceAnnotationBeanPostProcessor.class);
@@ -79,7 +81,7 @@ public class JpaRepositoryConfigExtensionUnitTests {
 	}
 
 	@Test
-	public void doesNotRegisterProcessorIfAutoRegistered() {
+	void doesNotRegisterProcessorIfAutoRegistered() {
 
 		DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
 		RootBeanDefinition pabppDefinition = new RootBeanDefinition(PersistenceAnnotationBeanPostProcessor.class);
@@ -89,14 +91,65 @@ public class JpaRepositoryConfigExtensionUnitTests {
 		assertOnlyOnePersistenceAnnotationBeanPostProcessorRegistered(factory, beanName);
 	}
 
+	@Test // DATAJPA-525
+	void guardsAgainstNullJavaTypesReturnedFromJpaMetamodel() throws Exception {
+
+		ApplicationContext context = mock(ApplicationContext.class);
+		EntityManagerFactory emf = mock(EntityManagerFactory.class);
+		Metamodel metamodel = mock(Metamodel.class);
+
+		when(context.getBeansOfType(EntityManagerFactory.class)).thenReturn(Collections.singletonMap("emf", emf));
+		when(emf.getMetamodel()).thenReturn(metamodel);
+
+		JpaMetamodelMappingContextFactoryBean factoryBean = new JpaMetamodelMappingContextFactoryBean();
+		factoryBean.setApplicationContext(context);
+
+		factoryBean.createInstance().afterPropertiesSet();
+	}
+
+	@Test // DATAJPA-1250
+	void shouldUseInspectionClassLoader() {
+
+		JpaRepositoryConfigExtension extension = new JpaRepositoryConfigExtension();
+		ClassLoader classLoader = extension.getConfigurationInspectionClassLoader(new GenericApplicationContext());
+
+		assertThat(classLoader).isInstanceOf(InspectionClassLoader.class);
+	}
+
+	@Test // DATAJPA-1250
+	void shouldNotUseInspectionClassLoaderWithoutEclipseLink() {
+
+		ShadowingClassLoader shadowingClassLoader = new ShadowingClassLoader(getClass().getClassLoader(), false) {
+
+			@Override
+			public Class<?> loadClass(String name) throws ClassNotFoundException {
+
+				if (name.startsWith("org.springframework.instrument.") || name.startsWith("org.eclipse.")) {
+					throw new ClassNotFoundException("Excluded: " + name);
+				}
+
+				return getClass().getClassLoader().loadClass(name);
+			}
+		};
+
+		GenericApplicationContext context = new GenericApplicationContext();
+		context.setClassLoader(shadowingClassLoader);
+
+		JpaRepositoryConfigExtension extension = new JpaRepositoryConfigExtension();
+		ClassLoader classLoader = extension.getConfigurationInspectionClassLoader(context);
+
+		assertThat(classLoader).isNotInstanceOf(InspectionClassLoader.class);
+	}
+
 	private void assertOnlyOnePersistenceAnnotationBeanPostProcessorRegistered(DefaultListableBeanFactory factory,
 			String expectedBeanName) {
 
 		RepositoryConfigurationExtension extension = new JpaRepositoryConfigExtension();
 		extension.registerBeansForRoot(factory, configSource);
 
-		assertThat(factory.getBean(expectedBeanName), is(notNullValue()));
-		exception.expect(NoSuchBeanDefinitionException.class);
-		factory.getBeanDefinition("org.springframework.orm.jpa.support.PersistenceAnnotationBeanPostProcessor#1");
+		assertThat(factory.getBean(expectedBeanName)).isNotNull();
+
+		assertThatExceptionOfType(NoSuchBeanDefinitionException.class).isThrownBy(() -> factory
+				.getBeanDefinition("org.springframework.orm.jpa.support.PersistenceAnnotationBeanPostProcessor#1"));
 	}
 }

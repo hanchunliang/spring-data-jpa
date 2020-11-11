@@ -1,11 +1,11 @@
 /*
- * Copyright 2008-2013 the original author or authors.
+ * Copyright 2008-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,10 +15,9 @@
  */
 package org.springframework.data.jpa.repository.config;
 
-import static org.hamcrest.CoreMatchers.*;
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.*;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.PropertyValue;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -31,68 +30,66 @@ import org.springframework.instrument.classloading.ShadowingClassLoader;
 
 /**
  * Integration tests for {@link AuditingBeanDefinitionParser}.
- * 
+ *
  * @author Oliver Gierke
  * @author Thomas Darimont
+ * @author Jens Schauder
  */
-public class AuditingBeanDefinitionParserTests {
+class AuditingBeanDefinitionParserTests {
 
 	@Test
-	public void settingDatesIsConfigured() {
-
+	void settingDatesIsConfigured() {
 		assertSetDatesIsSetTo("auditing/auditing-namespace-context.xml", "true");
 	}
 
 	@Test
-	public void notSettingDatesIsConfigured() {
-
+	void notSettingDatesIsConfigured() {
 		assertSetDatesIsSetTo("auditing/auditing-namespace-context2.xml", "false");
 	}
 
-	/**
-	 * @see DATAJPA-9
-	 */
-	@Test
-	public void wiresDateTimeProviderIfConfigured() {
+	@Test // DATAJPA-9
+	void wiresDateTimeProviderIfConfigured() {
 
-		String location = "auditing/auditing-namespace-context3.xml";
-		BeanDefinition definition = getBeanDefinition(location);
+		BeanDefinition definition = getBeanDefinition("auditing/auditing-namespace-context3.xml");
 		PropertyValue value = definition.getPropertyValues().getPropertyValue("dateTimeProvider");
 
-		assertThat(value, is(notNullValue()));
-		assertThat(value.getValue(), is(instanceOf(RuntimeBeanReference.class)));
-		assertThat(((RuntimeBeanReference) value.getValue()).getBeanName(), is("dateTimeProvider"));
+		assertThat(value).isNotNull();
+		assertThat(value.getValue()).isInstanceOf(RuntimeBeanReference.class);
+		assertThat(((RuntimeBeanReference) value.getValue()).getBeanName()).isEqualTo("dateTimeProvider");
 
-		BeanFactory factory = loadFactoryFrom(location);
+		BeanFactory factory = loadFactoryFrom("auditing/auditing-namespace-context3.xml");
 		Object bean = factory.getBean(AuditingBeanDefinitionParser.AUDITING_ENTITY_LISTENER_CLASS_NAME);
-		assertThat(bean, is(notNullValue()));
+		assertThat(bean).isNotNull();
 	}
 
-	/**
-	 * @see DATAJPA-367
-	 */
-	@Test(expected = BeanDefinitionParsingException.class)
-	public void shouldThrowBeanDefinitionParsingExceptionIfClassFromSpringAspectsJarCannotBeFound() {
+	@Test // DATAJPA-367
+	void shouldThrowBeanDefinitionParsingExceptionIfClassFromSpringAspectsJarCannotBeFound() {
 
 		ShadowingClassLoader scl = new ShadowingClassLoader(getClass().getClassLoader());
 		scl.excludeClass(AuditingBeanDefinitionParser.AUDITING_ENTITY_LISTENER_CLASS_NAME);
-		DefaultListableBeanFactory factory = loadFactoryFrom("auditing/auditing-namespace-context.xml", scl);
+		assertThatExceptionOfType(BeanDefinitionParsingException.class)
+				.isThrownBy(() -> loadFactoryFrom("auditing/auditing-namespace-context.xml", scl));
 	}
 
 	private void assertSetDatesIsSetTo(String configFile, String value) {
 
 		BeanDefinition definition = getBeanDefinition(configFile);
 		PropertyValue propertyValue = definition.getPropertyValues().getPropertyValue("dateTimeForNow");
-		assertThat(propertyValue, is(notNullValue()));
-		assertThat((String) propertyValue.getValue(), is(value));
+		assertThat(propertyValue).isNotNull();
+		assertThat((String) propertyValue.getValue()).isEqualTo(value);
 	}
 
 	private BeanDefinition getBeanDefinition(String configFile) {
 
 		DefaultListableBeanFactory factory = loadFactoryFrom(configFile);
+
 		BeanDefinition definition = factory
 				.getBeanDefinition(AuditingBeanDefinitionParser.AUDITING_ENTITY_LISTENER_CLASS_NAME);
-		return (BeanDefinition) definition.getPropertyValues().getPropertyValue("auditingHandler").getValue();
+		BeanDefinition handlerDefinition = (BeanDefinition) definition.getPropertyValues()
+				.getPropertyValue("auditingHandler").getValue();
+
+		String beanName = handlerDefinition.getPropertyValues().getPropertyValue("targetBeanName").getValue().toString();
+		return factory.getBeanDefinition(beanName);
 	}
 
 	private DefaultListableBeanFactory loadFactoryFrom(String configFile) {

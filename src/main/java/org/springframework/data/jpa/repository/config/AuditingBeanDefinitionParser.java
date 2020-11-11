@@ -1,11 +1,11 @@
 /*
- * Copyright 2008-2012 the original author or authors.
+ * Copyright 2008-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,34 +24,41 @@ import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.beans.factory.xml.BeanDefinitionParser;
 import org.springframework.beans.factory.xml.ParserContext;
-import org.springframework.data.config.AuditingHandlerBeanDefinitionParser;
+import org.springframework.data.auditing.config.AuditingHandlerBeanDefinitionParser;
+import org.springframework.data.config.ParsingUtils;
 import org.springframework.util.ClassUtils;
 import org.w3c.dom.Element;
 
 /**
- * {@link BeanDefinitionParser} for the {@code auditing} element. Sets up an AudE
- * 
+ * {@link BeanDefinitionParser} for the {@code auditing} element.
+ *
  * @author Oliver Gierke
+ * @author Thomas Darimont
  */
 public class AuditingBeanDefinitionParser implements BeanDefinitionParser {
 
 	static final String AUDITING_ENTITY_LISTENER_CLASS_NAME = "org.springframework.data.jpa.domain.support.AuditingEntityListener";
 	private static final String AUDITING_BFPP_CLASS_NAME = "org.springframework.data.jpa.domain.support.AuditingBeanFactoryPostProcessor";
 
-	private final BeanDefinitionParser auditingHandlerParser = new AuditingHandlerBeanDefinitionParser();
+	private final AuditingHandlerBeanDefinitionParser auditingHandlerParser = new AuditingHandlerBeanDefinitionParser(
+			BeanDefinitionNames.JPA_MAPPING_CONTEXT_BEAN_NAME);
+	private final SpringConfiguredBeanDefinitionParser springConfiguredParser = new SpringConfiguredBeanDefinitionParser();
 
 	/*
 	 * (non-Javadoc)
 	 * @see org.springframework.beans.factory.xml.BeanDefinitionParser#parse(org.w3c.dom.Element, org.springframework.beans.factory.xml.ParserContext)
 	 */
+	@Override
 	public BeanDefinition parse(Element element, ParserContext parser) {
 
-		new SpringConfiguredBeanDefinitionParser().parse(element, parser);
+		springConfiguredParser.parse(element, parser);
+		auditingHandlerParser.parse(element, parser);
 
-		BeanDefinition auditingHandlerDefinition = auditingHandlerParser.parse(element, parser);
+		Object source = parser.getReaderContext().extractSource(element);
 
 		BeanDefinitionBuilder builder = rootBeanDefinition(AUDITING_ENTITY_LISTENER_CLASS_NAME);
-		builder.addPropertyValue("auditingHandler", auditingHandlerDefinition);
+		builder.addPropertyValue("auditingHandler",
+				ParsingUtils.getObjectFactoryBeanDefinition(auditingHandlerParser.getResolvedBeanName(), source));
 		builder.setScope("prototype");
 
 		registerInfrastructureBeanWithId(builder.getRawBeanDefinition(), AUDITING_ENTITY_LISTENER_CLASS_NAME, parser,
@@ -73,8 +80,8 @@ public class AuditingBeanDefinitionParser implements BeanDefinitionParser {
 
 	/**
 	 * Copied code of SpringConfiguredBeanDefinitionParser until this class gets public.
-	 * 
-	 * @see http://jira.springframework.org/browse/SPR-7340
+	 *
+	 * @see <a href="https://jira.springframework.org/browse/SPR-7340">SPR-7340</a>
 	 * @author Juergen Hoeller
 	 */
 	private static class SpringConfiguredBeanDefinitionParser implements BeanDefinitionParser {
@@ -86,6 +93,7 @@ public class AuditingBeanDefinitionParser implements BeanDefinitionParser {
 
 		private static final String BEAN_CONFIGURER_ASPECT_CLASS_NAME = "org.springframework.beans.factory.aspectj.AnnotationBeanConfigurerAspect";
 
+		@Override
 		public BeanDefinition parse(Element element, ParserContext parserContext) {
 
 			if (!parserContext.getRegistry().containsBeanDefinition(BEAN_CONFIGURER_ASPECT_BEAN_NAME)) {

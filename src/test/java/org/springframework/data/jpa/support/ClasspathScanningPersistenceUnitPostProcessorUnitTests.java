@@ -1,11 +1,11 @@
 /*
- * Copyright 2011-2013 the original author or authors.
+ * Copyright 2011-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,56 +15,72 @@
  */
 package org.springframework.data.jpa.support;
 
+import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
+
+import java.io.IOException;
+import java.net.URL;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Set;
 
 import javax.persistence.Entity;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+
 import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
+import org.springframework.core.io.UrlResource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.orm.jpa.persistenceunit.MutablePersistenceUnitInfo;
 import org.springframework.orm.jpa.persistenceunit.PersistenceUnitPostProcessor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * Unit tests for {@link ClasspathScanningPersistenceUnitPostProcessor}.
- * 
+ *
  * @author Oliver Gierke
  * @author Thomas Darimont
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class ClasspathScanningPersistenceUnitPostProcessorUnitTests {
 
 	@Mock MutablePersistenceUnitInfo pui;
-	String basePackage = getClass().getPackage().getName();
+	private String basePackage = getClass().getPackage().getName();
 
-	@Test(expected = IllegalArgumentException.class)
-	public void rejectsNullBasePackage() {
-		new ClasspathScanningPersistenceUnitPostProcessor(null);
-	}
-
-	@Test(expected = IllegalArgumentException.class)
-	public void rejectsEmptyBasePackage() {
-		new ClasspathScanningPersistenceUnitPostProcessor("");
-	}
-
-	@Test(expected = IllegalArgumentException.class)
-	public void rejectsNullMappingFileNamePattern() {
-		ClasspathScanningPersistenceUnitPostProcessor processor = new ClasspathScanningPersistenceUnitPostProcessor(
-				basePackage);
-		processor.setMappingFileNamePattern(null);
-	}
-
-	@Test(expected = IllegalArgumentException.class)
-	public void rejectsEmptyMappingFileNamePattern() {
-		ClasspathScanningPersistenceUnitPostProcessor processor = new ClasspathScanningPersistenceUnitPostProcessor(
-				basePackage);
-		processor.setMappingFileNamePattern("");
+	@Test
+	void rejectsNullBasePackage() {
+		assertThatIllegalArgumentException().isThrownBy(() -> new ClasspathScanningPersistenceUnitPostProcessor(null));
 	}
 
 	@Test
-	public void findsEntityClassesForBasePackage() {
+	void rejectsEmptyBasePackage() {
+		assertThatIllegalArgumentException().isThrownBy(() -> new ClasspathScanningPersistenceUnitPostProcessor(""));
+	}
+
+	@Test
+	void rejectsNullMappingFileNamePattern() {
+		ClasspathScanningPersistenceUnitPostProcessor processor = new ClasspathScanningPersistenceUnitPostProcessor(
+				basePackage);
+		assertThatIllegalArgumentException().isThrownBy(() -> processor.setMappingFileNamePattern(null));
+	}
+
+	@Test
+	void rejectsEmptyMappingFileNamePattern() {
+		ClasspathScanningPersistenceUnitPostProcessor processor = new ClasspathScanningPersistenceUnitPostProcessor(
+				basePackage);
+		assertThatIllegalArgumentException().isThrownBy(() -> processor.setMappingFileNamePattern(""));
+	}
+
+	@Test
+	void findsEntityClassesForBasePackage() {
 
 		PersistenceUnitPostProcessor processor = new ClasspathScanningPersistenceUnitPostProcessor(basePackage);
 		processor.postProcessPersistenceUnitInfo(pui);
@@ -72,8 +88,8 @@ public class ClasspathScanningPersistenceUnitPostProcessorUnitTests {
 		verify(pui).addManagedClassName(SampleEntity.class.getName());
 	}
 
-	@Test
-	public void findsMappingFile() {
+	@Test // DATAJPA-407
+	void findsMappingFile() {
 
 		ClasspathScanningPersistenceUnitPostProcessor processor = new ClasspathScanningPersistenceUnitPostProcessor(
 				basePackage);
@@ -87,11 +103,8 @@ public class ClasspathScanningPersistenceUnitPostProcessorUnitTests {
 		verify(pui).addMappingFileName(expected);
 	}
 
-	/**
-	 * @see DATAJPA-353
-	 */
-	@Test
-	public void shouldFindJpaMappingFilesFromMultipleLocationsOnClasspath() {
+	@Test // DATAJPA-353, DATAJPA-407
+	void shouldFindJpaMappingFilesFromMultipleLocationsOnClasspath() {
 
 		ClasspathScanningPersistenceUnitPostProcessor processor = new ClasspathScanningPersistenceUnitPostProcessor(
 				basePackage);
@@ -104,8 +117,47 @@ public class ClasspathScanningPersistenceUnitPostProcessorUnitTests {
 		verify(pui).addMappingFileName("org/springframework/data/jpa/support/module2/module2-orm.xml");
 	}
 
-	@Entity
-	public static class SampleEntity {
+	@Test // DATAJPA-519
+	void shouldFindJpaMappingFilesFromNestedJarLocationsOnClasspath() {
 
+		String nestedModule3Path = "org/springframework/data/jpa/support/module3/module3-orm.xml";
+		final String fileInJarUrl = "jar:file:/foo/bar/lib/somelib.jar!/" + nestedModule3Path;
+
+		ResourceLoader resolver = new PathMatchingResourcePatternResolver(new DefaultResourceLoader()) {
+
+			@Override
+			public Resource[] getResources(String locationPattern) throws IOException {
+
+				Resource[] resources = super.getResources(locationPattern);
+				resources = Arrays.copyOf(resources, resources.length + 1);
+				resources[resources.length - 1] = new UrlResource(fileInJarUrl);
+
+				return resources;
+			}
+
+			@Override
+			protected Set<Resource> doFindPathMatchingJarResources(Resource rootDirResource, URL rootUri, String subPattern)
+					throws IOException {
+
+				if (fileInJarUrl.equals(rootUri.toString())) {
+					return Collections.singleton(rootDirResource);
+				}
+
+				return super.doFindPathMatchingJarResources(rootDirResource, rootUri, subPattern);
+			}
+		};
+
+		ClasspathScanningPersistenceUnitPostProcessor processor = new ClasspathScanningPersistenceUnitPostProcessor(
+				basePackage);
+		ReflectionTestUtils.setField(processor, "mappingFileResolver", resolver);
+		processor.setMappingFileNamePattern("**/*orm.xml");
+		processor.postProcessPersistenceUnitInfo(pui);
+
+		verify(pui).addMappingFileName("org/springframework/data/jpa/support/module1/module1-orm.xml");
+		verify(pui).addMappingFileName("org/springframework/data/jpa/support/module2/module2-orm.xml");
+		verify(pui).addMappingFileName(nestedModule3Path);
 	}
+
+	@Entity
+	public static class SampleEntity {}
 }

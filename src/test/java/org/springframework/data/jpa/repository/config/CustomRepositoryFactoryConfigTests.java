@@ -1,11 +1,11 @@
 /*
- * Copyright 2008-2011 the original author or authors.
+ * Copyright 2008-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,18 +15,17 @@
  */
 package org.springframework.data.jpa.repository.config;
 
-import static org.hamcrest.Matchers.*;
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.*;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.jpa.repository.custom.UserCustomExtendedRepository;
 import org.springframework.data.jpa.repository.support.TransactionalRepositoryTests.DelegatingTransactionManager;
 import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
-import org.springframework.util.Assert;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 /**
  * Annotation to exclude repository interfaces from being picked up and thus in consequence getting an instance being
@@ -36,47 +35,45 @@ import org.springframework.util.Assert;
  * custom repository base class to implement methods declared in that intermediate interface. In this case you typically
  * derive your concrete repository interfaces from the intermediate one but don't want to create a Spring bean for the
  * intermediate interface.
- * 
+ *
  * @author Oliver Gierke
+ * @author Mark Paluch
+ * @author Jens Schauder
  */
-@RunWith(SpringJUnit4ClassRunner.class)
+@ExtendWith(SpringExtension.class)
 @ContextConfiguration(locations = "classpath:config/namespace-customfactory-context.xml")
 public class CustomRepositoryFactoryConfigTests {
 
-	@Autowired(required = false)
-	UserCustomExtendedRepository userRepository;
+	@Autowired(required = false) UserCustomExtendedRepository userRepository;
 
-	@Autowired
-	DelegatingTransactionManager transactionManager;
+	@Autowired DelegatingTransactionManager transactionManager;
 
-	@Before
-	public void setup() {
+	@BeforeEach
+	void setup() {
 
 		transactionManager.resetCount();
 	}
 
-	@Test(expected = UnsupportedOperationException.class)
-	public void testCustomFactoryUsed() {
-
-		Assert.notNull(userRepository);
-		userRepository.customMethod(1);
+	@Test
+	void testCustomFactoryUsed() {
+		assertThatExceptionOfType(UnsupportedOperationException.class).isThrownBy(() -> userRepository.customMethod(1));
 	}
 
 	@Test
-	public void reconfiguresTransactionalMethodWithoutGenericParameter() {
+	void reconfiguresTransactionalMethodWithoutGenericParameter() {
 
 		userRepository.findAll();
 
-		assertFalse(transactionManager.getDefinition().isReadOnly());
-		assertThat(transactionManager.getDefinition().getTimeout(), is(10));
+		assertThat(transactionManager.getDefinition().isReadOnly()).isFalse();
+		assertThat(transactionManager.getDefinition().getTimeout()).isEqualTo(10);
 	}
 
 	@Test
-	public void reconfiguresTransactionalMethodWithGenericParameter() {
+	void reconfiguresTransactionalMethodWithGenericParameter() {
 
-		userRepository.findOne(1);
+		userRepository.findById(1);
 
-		assertFalse(transactionManager.getDefinition().isReadOnly());
-		assertThat(transactionManager.getDefinition().getTimeout(), is(10));
+		assertThat(transactionManager.getDefinition().isReadOnly()).isFalse();
+		assertThat(transactionManager.getDefinition().getTimeout()).isEqualTo(10);
 	}
 }

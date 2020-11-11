@@ -1,11 +1,11 @@
 /*
- * Copyright 2012 the original author or authors.
+ * Copyright 2012-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,39 +15,40 @@
  */
 package org.springframework.data.jpa.repository;
 
-import static org.hamcrest.Matchers.*;
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.*;
 
 import java.util.Arrays;
 import java.util.Map;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.data.jpa.repository.sample.UserRepository;
 import org.springframework.data.jpa.repository.support.JpaRepositoryFactoryBean;
 import org.springframework.data.repository.core.support.RepositoryFactoryInformation;
 import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
-
-@RunWith(SpringJUnit4ClassRunner.class)
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+/**
+ * @author Jens Schauder
+ */
+@ExtendWith(SpringExtension.class)
 @ContextConfiguration("classpath:config/namespace-application-context.xml")
 public class SPR8954Tests {
 
-	@Autowired
-	ApplicationContext context;
+	@Autowired ApplicationContext context;
 
 	@Test
 	@SuppressWarnings("rawtypes")
-	public void canAccessRepositoryFactoryInformationFactoryBeans() {
+	void canAccessRepositoryFactoryInformationFactoryBeans() {
 
 		Map<String, RepositoryFactoryInformation> repoFactories = context
 				.getBeansOfType(RepositoryFactoryInformation.class);
 
-		assertThat(repoFactories.size(), is(greaterThan(0)));
-		assertThat(repoFactories.keySet(), hasItem("&userRepository"));
-		assertThat(repoFactories.get("&userRepository"), is(instanceOf(JpaRepositoryFactoryBean.class)));
-		assertThat(Arrays.asList(context.getBeanNamesForType(UserRepository.class)), hasItem("userRepository"));
+		assertThat(repoFactories.size()).isGreaterThan(0);
+		assertThat(repoFactories.keySet()).contains("&userRepository");
+		assertThat(repoFactories.get("&userRepository")).isInstanceOf(JpaRepositoryFactoryBean.class);
+		assertThat(Arrays.asList(context.getBeanNamesForType(UserRepository.class))).contains("userRepository");
 	}
 }

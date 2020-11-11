@@ -1,11 +1,11 @@
 /*
- * Copyright 2008-2013 the original author or authors.
+ * Copyright 2008-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,100 +15,111 @@
  */
 package org.springframework.data.jpa.repository.support;
 
-import static org.hamcrest.CoreMatchers.*;
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.*;
 
 import java.util.Arrays;
+import java.util.Optional;
 
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+import org.springframework.data.jpa.domain.sample.PersistableWithIdClass;
+import org.springframework.data.jpa.domain.sample.PersistableWithIdClassPK;
 import org.springframework.data.jpa.domain.sample.SampleEntity;
 import org.springframework.data.jpa.domain.sample.SampleEntityPK;
-import org.springframework.data.jpa.domain.sample.SampleWithIdClass;
-import org.springframework.data.jpa.domain.sample.SampleWithIdClassPK;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Integration test for {@link JpaRepository}.
- * 
+ *
  * @author Oliver Gierke
+ * @author Thomas Darimont
+ * @author Jens Schauder
  */
-@RunWith(SpringJUnit4ClassRunner.class)
+@ExtendWith(SpringExtension.class)
 @ContextConfiguration({ "classpath:infrastructure.xml" })
 @Transactional
-public class JpaRepositoryTests {
+class JpaRepositoryTests {
 
-	@PersistenceContext
-	EntityManager em;
+	@PersistenceContext EntityManager em;
 
-	JpaRepository<SampleEntity, SampleEntityPK> repository;
-	CrudRepository<SampleWithIdClass, SampleWithIdClassPK> idClassRepository;
+	private JpaRepository<SampleEntity, SampleEntityPK> repository;
+	private CrudRepository<PersistableWithIdClass, PersistableWithIdClassPK> idClassRepository;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		repository = new JpaRepositoryFactory(em).getRepository(SampleEntityRepository.class);
 		idClassRepository = new JpaRepositoryFactory(em).getRepository(SampleWithIdClassRepository.class);
 	}
 
 	@Test
-	public void testCrudOperationsForCompoundKeyEntity() throws Exception {
+	void testCrudOperationsForCompoundKeyEntity() throws Exception {
 
 		SampleEntity entity = new SampleEntity("foo", "bar");
 		repository.saveAndFlush(entity);
-		assertThat(repository.exists(new SampleEntityPK("foo", "bar")), is(true));
-		assertThat(repository.count(), is(1L));
-		assertThat(repository.findOne(new SampleEntityPK("foo", "bar")), is(entity));
+		assertThat(repository.existsById(new SampleEntityPK("foo", "bar"))).isTrue();
+		assertThat(repository.count()).isEqualTo(1L);
+		assertThat(repository.findById(new SampleEntityPK("foo", "bar"))).isEqualTo(Optional.of(entity));
 
-		repository.delete(Arrays.asList(entity));
+		repository.deleteAll(Arrays.asList(entity));
 		repository.flush();
-		assertThat(repository.count(), is(0L));
+		assertThat(repository.count()).isEqualTo(0L);
 	}
 
-	/**
-	 * @see DATAJPA-50
-	 */
-	@Test
-	public void executesCrudOperationsForEntityWithIdClass() {
+	@Test // DATAJPA-50
+	void executesCrudOperationsForEntityWithIdClass() {
 
-		SampleWithIdClass entity = new SampleWithIdClass(1L, 1L);
+		PersistableWithIdClass entity = new PersistableWithIdClass(1L, 1L);
 		idClassRepository.save(entity);
 
-		assertThat(entity.getFirst(), is(notNullValue()));
-		assertThat(entity.getSecond(), is(notNullValue()));
+		assertThat(entity.getFirst()).isNotNull();
+		assertThat(entity.getSecond()).isNotNull();
 
-		SampleWithIdClassPK id = new SampleWithIdClassPK(entity.getFirst(), entity.getSecond());
+		PersistableWithIdClassPK id = new PersistableWithIdClassPK(entity.getFirst(), entity.getSecond());
 
-		assertThat(idClassRepository.findOne(id), is(entity));
+		assertThat(idClassRepository.findById(id)).isEqualTo(Optional.of(entity));
 	}
 
-	/**
-	 * @see DATAJPA-266
-	 */
-	@Test
-	public void testExistsForDomainObjectsWithCompositeKeys() throws Exception {
+	@Test // DATAJPA-266
+	void testExistsForDomainObjectsWithCompositeKeys() throws Exception {
 
-		SampleWithIdClass s1 = idClassRepository.save(new SampleWithIdClass(1L, 1L));
-		SampleWithIdClass s2 = idClassRepository.save(new SampleWithIdClass(2L, 2L));
+		PersistableWithIdClass s1 = idClassRepository.save(new PersistableWithIdClass(1L, 1L));
+		PersistableWithIdClass s2 = idClassRepository.save(new PersistableWithIdClass(2L, 2L));
 
-		assertThat(idClassRepository.exists(s1.getId()), is(true));
-		assertThat(idClassRepository.exists(s2.getId()), is(true));
-		assertThat(idClassRepository.exists(new SampleWithIdClassPK(1L, 2L)), is(false));
+		assertThat(idClassRepository.existsById(s1.getId())).isTrue();
+		assertThat(idClassRepository.existsById(s2.getId())).isTrue();
+		assertThat(idClassRepository.existsById(new PersistableWithIdClassPK(1L, 2L))).isFalse();
+	}
+
+	@Test // DATAJPA-527
+	void executesExistsForEntityWithIdClass() {
+
+		PersistableWithIdClass entity = new PersistableWithIdClass(1L, 1L);
+		idClassRepository.save(entity);
+
+		assertThat(entity.getFirst()).isNotNull();
+		assertThat(entity.getSecond()).isNotNull();
+
+		PersistableWithIdClassPK id = new PersistableWithIdClassPK(entity.getFirst(), entity.getSecond());
+
+		assertThat(idClassRepository.existsById(id)).isTrue();
 	}
 
 	private static interface SampleEntityRepository extends JpaRepository<SampleEntity, SampleEntityPK> {
 
 	}
 
-	private static interface SampleWithIdClassRepository extends CrudRepository<SampleWithIdClass, SampleWithIdClassPK> {
+	private static interface SampleWithIdClassRepository
+			extends CrudRepository<PersistableWithIdClass, PersistableWithIdClassPK> {
 
 	}
 }

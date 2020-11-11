@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,11 +15,16 @@
  */
 package org.springframework.data.jpa.infrastructure;
 
-import static org.hamcrest.CoreMatchers.*;
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.*;
+
+import java.util.List;
 
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
+import javax.persistence.Query;
+import javax.persistence.Tuple;
+import javax.persistence.TupleElement;
+import javax.persistence.TypedQuery;
 import javax.persistence.criteria.CriteriaBuilder;
 import javax.persistence.criteria.CriteriaQuery;
 import javax.persistence.criteria.Path;
@@ -29,34 +34,36 @@ import javax.persistence.metamodel.Bindable.BindableType;
 import javax.persistence.metamodel.ManagedType;
 import javax.persistence.metamodel.Metamodel;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
 import org.springframework.data.jpa.domain.sample.User;
 import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * @author Oliver Gierke
+ * @author Jens Schauder
  */
-@RunWith(SpringJUnit4ClassRunner.class)
+@ExtendWith(SpringExtension.class)
 @ContextConfiguration({ "classpath:infrastructure.xml" })
-public class MetamodelIntegrationTests {
+abstract class MetamodelIntegrationTests {
 
-	@PersistenceContext
-	EntityManager em;
+	@PersistenceContext EntityManager em;
 
 	@Test
-	public void considersOneToOneAttributeAnAssociation() {
+	void considersOneToOneAttributeAnAssociation() {
 
 		Metamodel metamodel = em.getMetamodel();
 		ManagedType<User> type = metamodel.managedType(User.class);
 
 		Attribute<? super User, ?> attribute = type.getSingularAttribute("manager");
-		assertThat(attribute.isAssociation(), is(true));
+		assertThat(attribute.isAssociation()).isTrue();
 	}
 
 	@Test
-	public void pathToEntityIsOfBindableTypeEntityType() {
+	void pathToEntityIsOfBindableTypeEntityType() {
 
 		CriteriaBuilder builder = em.getCriteriaBuilder();
 		CriteriaQuery<User> query = builder.createQuery(User.class);
@@ -64,6 +71,55 @@ public class MetamodelIntegrationTests {
 		Root<User> root = query.from(User.class);
 		Path<Object> path = root.get("manager");
 
-		assertThat(path.getModel().getBindableType(), is(BindableType.ENTITY_TYPE));
+		assertThat(path.getModel().getBindableType()).isEqualTo(BindableType.ENTITY_TYPE);
+	}
+
+	@Test
+	void canAccessParametersByIndexForNativeQueries() {
+
+		Query query = em.createNativeQuery("SELECT u from User u where u.lastname = ?1");
+
+		assertThat(query.getParameter(1)).isNotNull();
+	}
+
+	@Test
+	@Transactional
+	void doesNotExposeAliasForTupleIfNoneDefined() {
+
+		User user = new User();
+
+		user.setFirstname("Dave");
+		user.setEmailAddress("email");
+
+		em.persist(user);
+
+		TypedQuery<Tuple> query = em.createQuery("SELECT u.firstname from User u", Tuple.class);
+
+		List<Tuple> result = query.getResultList();
+		List<TupleElement<?>> elements = result.get(0).getElements();
+
+		assertThat(elements).hasSize(1);
+		assertThat(elements.get(0).getAlias()).isNull();
+	}
+
+	@Test
+	@Transactional
+	void returnsAliasesInTuple() {
+
+		User user = new User();
+		user.setFirstname("Dave");
+		user.setLastname("Matthews");
+		user.setEmailAddress("email");
+
+		em.persist(user);
+
+		TypedQuery<Tuple> query = em.createQuery(
+				"SELECT u.lastname AS lastname, u.firstname AS firstname FROM User u ORDER BY u.lastname ASC", Tuple.class);
+
+		List<Tuple> resultList = query.getResultList();
+		List<TupleElement<?>> elements = resultList.get(0).getElements();
+
+		assertThat(elements).hasSize(2);
+		assertThat(elements).extracting(TupleElement::getAlias).contains("firstname", "lastname");
 	}
 }

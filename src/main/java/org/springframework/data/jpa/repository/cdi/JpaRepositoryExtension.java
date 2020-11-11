@@ -1,11 +1,11 @@
 /*
- * Copyright 2011 the original author or authors.
+ * Copyright 2011-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Set;
 
 import javax.enterprise.event.Observes;
@@ -33,13 +34,16 @@ import javax.persistence.EntityManager;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.repository.cdi.CdiRepositoryBean;
 import org.springframework.data.repository.cdi.CdiRepositoryExtensionSupport;
 
 /**
  * A portable CDI extension which registers beans for Spring Data JPA repositories.
- * 
+ *
  * @author Dirk Mahler
  * @author Oliver Gierke
+ * @author Mark Paluch
+ * @author Christoph Strobl
  */
 public class JpaRepositoryExtension extends CdiRepositoryExtensionSupport {
 
@@ -54,9 +58,9 @@ public class JpaRepositoryExtension extends CdiRepositoryExtensionSupport {
 	/**
 	 * Implementation of a an observer which checks for EntityManager beans and stores them in {@link #entityManagers} for
 	 * later association with corresponding repository beans.
-	 * 
+	 *
 	 * @param <X> The type.
-	 * @param processAnnotatedType The annotated type as defined by CDI.
+	 * @param processBean The annotated type as defined by CDI.
 	 */
 	@SuppressWarnings("unchecked")
 	<X> void processBean(@Observes ProcessBean<X> processBean) {
@@ -78,7 +82,7 @@ public class JpaRepositoryExtension extends CdiRepositoryExtensionSupport {
 	 * repositories.
 	 * <p>
 	 * The repository beans are associated to the EntityManagers using their qualifiers.
-	 * 
+	 *
 	 * @param beanManager The BeanManager instance.
 	 */
 	void afterBeanDiscovery(@Observes AfterBeanDiscovery afterBeanDiscovery, BeanManager beanManager) {
@@ -87,23 +91,27 @@ public class JpaRepositoryExtension extends CdiRepositoryExtensionSupport {
 
 			Class<?> repositoryType = entry.getKey();
 			Set<Annotation> qualifiers = entry.getValue();
+
 			// Create the bean representing the repository.
-			Bean<?> repositoryBean = createRepositoryBean(repositoryType, qualifiers, beanManager);
+			CdiRepositoryBean<?> repositoryBean = createRepositoryBean(repositoryType, qualifiers, beanManager);
 			LOGGER.info("Registering bean for '{}' with qualifiers {}.", repositoryType.getName(), qualifiers);
-			// Register the bean to the container.
+
+			// Register the bean to the extension and the container.
+			registerBean(repositoryBean);
 			afterBeanDiscovery.addBean(repositoryBean);
 		}
 	}
 
 	/**
 	 * Creates a {@link Bean}.
-	 * 
+	 *
 	 * @param <T> The type of the repository.
 	 * @param repositoryType The class representing the repository.
 	 * @param beanManager The BeanManager instance.
 	 * @return The bean.
 	 */
-	private <T> Bean<T> createRepositoryBean(Class<T> repositoryType, Set<Annotation> qualifiers, BeanManager beanManager) {
+	private <T> CdiRepositoryBean<T> createRepositoryBean(Class<T> repositoryType, Set<Annotation> qualifiers,
+			BeanManager beanManager) {
 
 		// Determine the entity manager bean which matches the qualifiers of the repository.
 		Bean<EntityManager> entityManagerBean = entityManagers.get(qualifiers);
@@ -114,6 +122,7 @@ public class JpaRepositoryExtension extends CdiRepositoryExtensionSupport {
 		}
 
 		// Construct and return the repository bean.
-		return new JpaRepositoryBean<T>(beanManager, entityManagerBean, qualifiers, repositoryType);
+		return new JpaRepositoryBean<T>(beanManager, entityManagerBean, qualifiers, repositoryType,
+				Optional.of(getCustomImplementationDetector()));
 	}
 }
